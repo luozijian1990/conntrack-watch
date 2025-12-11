@@ -137,6 +137,42 @@ conntrack_new_connections_total{port="80"} 123
 conntrack_new_connections_total{port="443"} 456
 ```
 
+### PromQL 查询示例
+
+**查看各端口每秒新建连接速率：**
+
+```promql
+rate(conntrack_new_connections_total[5m])
+```
+
+**按端口分别查看连接速率：**
+
+```promql
+# 443 端口每秒新建连接数
+rate(conntrack_new_connections_total{port="443"}[5m])
+
+# 80 端口每秒新建连接数
+rate(conntrack_new_connections_total{port="80"}[5m])
+```
+
+**对比不同端口的连接趋势（适合 Grafana 图表）：**
+
+```promql
+sum by (port) (rate(conntrack_new_connections_total[5m]))
+```
+
+**查看过去 1 小时内连接数增长量：**
+
+```promql
+increase(conntrack_new_connections_total[1h])
+```
+
+**按实例和端口统计（多节点部署时）：**
+
+```promql
+sum by (instance, port) (rate(conntrack_new_connections_total[5m]))
+```
+
 ## 依赖
 
 - Linux 系统（conntrack 模块）
