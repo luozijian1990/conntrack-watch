@@ -1,0 +1,23 @@
+# Conntrack Watch 配置文件
+
+# 要监控的目标端口列表
+ports:
+  - 80
+  - 443
+
+# 日志配置
+log:
+  path: "/var/log/nat-tracker/nat.log"  # 日志文件路径
+  max_size_mb: 100                       # 单文件最大 MB
+  max_backups: 10                        # 保留旧文件数量
+  max_age_days: 7                        # 保留天数
+  compress: true                         # 是否压缩旧文件
+
+# Prometheus 指标配置
+prometheus:
+  enabled: true                          # 是否启用指标
+  listen_addr: ":9358"                   # 监听地址
+
+# Web UI 配置
+web_ui:
+  enabled: false                         # 是否启用 Web 查询页面（默认关闭）

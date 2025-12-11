@@ -1,0 +1,312 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>Conntrack 查询</title>
+    <style>
+      * {
+        margin: 0;
+        padding: 0;
+        box-sizing: border-box;
+      }
+
+      body {
+        font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto,
+          "Helvetica Neue", Arial, sans-serif;
+        background: linear-gradient(
+          135deg,
+          #1a1a2e 0%,
+          #16213e 50%,
+          #0f3460 100%
+        );
+        min-height: 100vh;
+        color: #e4e4e4;
+        padding: 40px 20px;
+      }
+
+      .container {
+        max-width: 800px;
+        margin: 0 auto;
+      }
+
+      h1 {
+        text-align: center;
+        font-size: 2.5rem;
+        margin-bottom: 40px;
+        background: linear-gradient(90deg, #00d9ff, #00ff88);
+        -webkit-background-clip: text;
+        -webkit-text-fill-color: transparent;
+        background-clip: text;
+      }
+
+      .card {
+        background: rgba(255, 255, 255, 0.05);
+        backdrop-filter: blur(10px);
+        border-radius: 16px;
+        padding: 32px;
+        border: 1px solid rgba(255, 255, 255, 0.1);
+        box-shadow: 0 8px 32px rgba(0, 0, 0, 0.3);
+      }
+
+      .form-row {
+        display: grid;
+        grid-template-columns: repeat(auto-fit, minmax(180px, 1fr));
+        gap: 20px;
+        margin-bottom: 24px;
+      }
+
+      .form-group {
+        display: flex;
+        flex-direction: column;
+      }
+
+      label {
+        font-size: 0.85rem;
+        color: #8b8b8b;
+        margin-bottom: 8px;
+        text-transform: uppercase;
+        letter-spacing: 0.5px;
+      }
+
+      input,
+      select {
+        padding: 14px 16px;
+        border: 1px solid rgba(255, 255, 255, 0.1);
+        border-radius: 8px;
+        background: rgba(0, 0, 0, 0.3);
+        color: #fff;
+        font-size: 1rem;
+        transition: all 0.3s ease;
+      }
+
+      input:focus,
+      select:focus {
+        outline: none;
+        border-color: #00d9ff;
+        box-shadow: 0 0 0 3px rgba(0, 217, 255, 0.2);
+      }
+
+      input::placeholder {
+        color: #666;
+      }
+
+      button {
+        width: 100%;
+        padding: 16px;
+        background: linear-gradient(90deg, #00d9ff, #00ff88);
+        border: none;
+        border-radius: 8px;
+        color: #1a1a2e;
+        font-size: 1.1rem;
+        font-weight: 600;
+        cursor: pointer;
+        transition: all 0.3s ease;
+        margin-top: 8px;
+      }
+
+      button:hover {
+        transform: translateY(-2px);
+        box-shadow: 0 8px 24px rgba(0, 217, 255, 0.3);
+      }
+
+      button:active {
+        transform: translateY(0);
+      }
+
+      .result {
+        margin-top: 32px;
+        padding: 24px;
+        background: rgba(0, 0, 0, 0.3);
+        border-radius: 12px;
+        border: 1px solid rgba(255, 255, 255, 0.1);
+        display: none;
+      }
+
+      .result.show {
+        display: block;
+        animation: fadeIn 0.3s ease;
+      }
+
+      @keyframes fadeIn {
+        from {
+          opacity: 0;
+          transform: translateY(10px);
+        }
+        to {
+          opacity: 1;
+          transform: translateY(0);
+        }
+      }
+
+      .result h3 {
+        color: #00d9ff;
+        margin-bottom: 16px;
+        font-size: 1.1rem;
+      }
+
+      .result-content {
+        font-family: "Monaco", "Menlo", monospace;
+        font-size: 0.9rem;
+        white-space: pre-wrap;
+        word-break: break-all;
+        line-height: 1.6;
+      }
+
+      .error {
+        color: #ff6b6b;
+      }
+
+      .success {
+        color: #00ff88;
+      }
+
+      .status-badge {
+        display: inline-block;
+        padding: 4px 12px;
+        border-radius: 20px;
+        font-size: 0.85rem;
+        font-weight: 600;
+        margin-bottom: 16px;
+      }
+
+      .status-badge.established {
+        background: rgba(0, 255, 136, 0.2);
+        color: #00ff88;
+      }
+
+      .status-badge.other {
+        background: rgba(255, 193, 7, 0.2);
+        color: #ffc107;
+      }
+
+      .tuple-box {
+        background: rgba(0, 0, 0, 0.2);
+        border-radius: 8px;
+        padding: 16px;
+        margin-bottom: 12px;
+      }
+
+      .tuple-box h4 {
+        color: #8b8b8b;
+        font-size: 0.8rem;
+        text-transform: uppercase;
+        margin-bottom: 8px;
+      }
+
+      .tuple-info {
+        font-family: "Monaco", "Menlo", monospace;
+        font-size: 0.95rem;
+      }
+    </style>
+  </head>
+  <body>
+    <div class="container">
+      <h1>🔍 Conntrack 查询</h1>
+
+      <div class="card">
+        <form id="queryForm">
+          <div class="form-row">
+            <div class="form-group">
+              <label>协议</label>
+              <select id="protocol">
+                <option value="tcp">TCP</option>
+                <option value="udp">UDP</option>
+              </select>
+            </div>
+          </div>
+
+          <div class="form-row">
+            <div class="form-group">
+              <label>源 IP</label>
+              <input type="text" id="src_ip" placeholder="10.0.0.5" />
+            </div>
+            <div class="form-group">
+              <label>源端口</label>
+              <input type="number" id="src_port" placeholder="45678" />
+            </div>
+          </div>
+
+          <div class="form-row">
+            <div class="form-group">
+              <label>目标 IP</label>
+              <input type="text" id="dst_ip" placeholder="1.2.3.4" />
+            </div>
+            <div class="form-group">
+              <label>目标端口</label>
+              <input type="number" id="dst_port" placeholder="443" />
+            </div>
+          </div>
+
+          <button type="submit">查询连接状态</button>
+        </form>
+
+        <div class="result" id="result">
+          <h3>查询结果</h3>
+          <div class="result-content" id="resultContent"></div>
+        </div>
+      </div>
+    </div>
+
+    <script>
+      document
+        .getElementById("queryForm")
+        .addEventListener("submit", async (e) => {
+          e.preventDefault();
+
+          const params = new URLSearchParams({
+            protocol: document.getElementById("protocol").value,
+            src_ip: document.getElementById("src_ip").value,
+            src_port: document.getElementById("src_port").value,
+            dst_ip: document.getElementById("dst_ip").value,
+            dst_port: document.getElementById("dst_port").value,
+          });
+
+          try {
+            const response = await fetch(`/api/conntrack/query?${params}`);
+            const data = await response.json();
+
+            const resultDiv = document.getElementById("result");
+            const contentDiv = document.getElementById("resultContent");
+
+            resultDiv.classList.add("show");
+
+            if (data.error) {
+              contentDiv.innerHTML = `<span class="error">❌ ${data.error}</span>`;
+            } else {
+              const statusClass =
+                data.status === "ESTABLISHED" ? "established" : "other";
+              contentDiv.innerHTML = `
+                        <span class="status-badge ${statusClass}">${
+                data.status || "UNKNOWN"
+              }</span>
+                        
+                        <div class="tuple-box">
+                            <h4>Origin (原始方向)</h4>
+                            <div class="tuple-info">
+                                ${data.origin.src}:${data.origin.src_port} → ${
+                data.origin.dst
+              }:${data.origin.dst_port}
+                            </div>
+                        </div>
+                        
+                        <div class="tuple-box">
+                            <h4>Reply (回复方向 / SNAT 信息)</h4>
+                            <div class="tuple-info">
+                                ${data.reply.src}:${data.reply.src_port} → ${
+                data.reply.dst
+              }:${data.reply.dst_port}
+                            </div>
+                        </div>
+                    `;
+            }
+          } catch (error) {
+            const resultDiv = document.getElementById("result");
+            const contentDiv = document.getElementById("resultContent");
+            resultDiv.classList.add("show");
+            contentDiv.innerHTML = `<span class="error">❌ 请求失败: ${error.message}</span>`;
+          }
+        });
+    </script>
+  </body>
+</html>
