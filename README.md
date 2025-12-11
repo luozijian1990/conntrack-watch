@@ -74,7 +74,7 @@ log:
 
 prometheus:
   enabled: true
-  listen_addr: ":9100"
+  listen_addr: ":9358"
 
 web_ui:
   enabled: false  # 是否启用 Web 查询页面
