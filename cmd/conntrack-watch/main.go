@@ -35,12 +35,12 @@ func main() {
 	})
 	defer logger.Log.Sync()
 
-	logger.Log.Info("程序启动，监控端口配置完成")
+	logger.Info("程序启动，监控端口配置完成")
 
 	// 创建连接监控器
 	watcher, err := conntrack.NewWatcher(cfg.Ports)
 	if err != nil {
-		logger.Log.Error("创建 conntrack 监控器失败: " + err.Error())
+		logger.Error("创建 conntrack 监控器失败: " + err.Error())
 		os.Exit(1)
 	}
 	defer watcher.Close()
@@ -54,16 +54,16 @@ func main() {
 	// 开始监控
 	ctx := context.Background()
 	if err := watcher.Start(ctx); err != nil {
-		logger.Log.Error("启动监控失败: " + err.Error())
+		logger.Error("启动监控失败: " + err.Error())
 		os.Exit(1)
 	}
 
-	logger.Log.Info("开始监听 conntrack 事件...")
+	logger.Info("开始监听 conntrack 事件...")
 
 	// 等待退出信号
 	sigCh := make(chan os.Signal, 1)
 	signal.Notify(sigCh, syscall.SIGINT, syscall.SIGTERM)
 	<-sigCh
 
-	logger.Log.Info("收到退出信号，关闭...")
+	logger.Info("收到退出信号，关闭...")
 }

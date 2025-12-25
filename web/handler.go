@@ -38,13 +38,13 @@ func (s *Server) Start(listenAddr string, webUIEnabled bool) {
 	if webUIEnabled {
 		staticFS, _ := fs.Sub(staticFiles, "static")
 		http.Handle("/", http.FileServer(http.FS(staticFS)))
-		logger.Log.Info("Web UI 已启用")
+		logger.Info("Web UI 已启用")
 	}
 
 	go func() {
-		logger.Log.Info("Web 服务已启动: " + listenAddr)
+		logger.Info("Web 服务已启动: " + listenAddr)
 		if err := http.ListenAndServe(listenAddr, nil); err != nil {
-			logger.Log.Error("Web 服务错误: " + err.Error())
+			logger.Error("Web 服务错误: " + err.Error())
 		}
 	}()
 }
