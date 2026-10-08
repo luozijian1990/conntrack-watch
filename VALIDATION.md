@@ -2,6 +2,20 @@
 
 日期：2026-10-02。实现范围：主动 TCP 出站连接的容器来源 IP、JSON 日志、Prometheus 指标、Grafana dashboard、构建和部署模板。
 
+## 2026-10-08 根目录迁移复验
+
+`ebpf` 分支现以仓库根目录作为唯一 Go 模块、构建和配置入口。移除本分支的旧 conntrack 程序、Web 查询页面、架构/流程图和旧 CI；原实现仍在 `main` 分支。eBPF 源码、测试、配置、Dockerfile、Makefile、部署模板、看板和脚本与迁移前逐文件比对一致。README 重新整理，CI 改用根目录路径，Docker 构建上下文排除 `.git`、`.vscode` 和 `build`。
+
+本轮从根目录实际执行并通过：
+
+- `make test`（`go test -race ./...`）、`go vet ./...`、宿主机 `go run ./cmd/egress-watch -config config.yaml -check-config`。
+- 宿主机 Go 交叉编译 linux/amd64、linux/arm64；现有 Linux 工具链容器中分别执行 `make build GOARCH=amd64` 和 `GOARCH=arm64`，包括 BPF C 编译。
+- `python3 scripts/check-dashboard.py`：10 个面板静态检查；README 本地文件链接检查、`git diff --check`。
+- `docker build -t conntrack-watch-egress:root-migration-check .`：arm64 最终运行镜像构建及镜像内配置校验。此次默认 Go 代理可用。
+- 使用本轮 arm64 可执行文件和 BPF 对象执行 `python3 scripts/smoke-docker.py`：Docker Linux `6.12.76-linuxkit`，两个来源 IP `172.24.0.3`、`172.24.0.4`，共 10 条事件；3 次成功、2 次拒绝，源端口补全、目标/端口/host netns 排除、JSON 与 Prometheus 一致、零采集错误、SIGTERM 退出码 0 均通过。测试容器和网络已由脚本清理，证据更新于 `build/smoke/`。
+
+本轮未重新执行 promtool 查询解析、Grafana 页面验证、目标 Kubernetes/CNI、IPv6 实际流量或负载验收。下面的早期记录保留当时的目录结构和验证范围。
+
 ## 2026-10-08 分支提交修复复验
 
 修复前 `main` 与 `ebpf` 均指向 `6593372`，`ebpf/` 和 eBPF CI 尚未被 Git 跟踪，分支提交不包含采集器入口。此次将独立模块及 CI 纳入 `ebpf` 分支，并在根 README 标明实际构建和使用入口。
