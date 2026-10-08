@@ -1,4 +1,12 @@
-# Conntrack Watch
+# eBPF Container Egress Watch
+
+当前为 `ebpf` 分支，主要工具是独立的 [eBPF 容器出站观测器](ebpf/README.md)，用于记录发起 TCP 连接的容器 IP、目标、建连结果和耗时。
+
+从仓库根目录执行 `make -C ebpf build GOARCH=amd64`（ARM64 使用 `GOARCH=arm64`），生成 `ebpf/build/egress-watch` 和 BPF 对象。运行与部署请按 [eBPF 快速开始](ebpf/README.md#快速开始) 配置；[验证记录](ebpf/VALIDATION.md)说明已验证范围。
+
+以下保留原有 conntrack 工具的说明，其根目录构建命令、配置和指标对应 conntrack 实现。
+
+## Conntrack Watch
 
 Linux 连接跟踪（conntrack）监控工具，用于实时监控指定端口的新连接，并提供 Prometheus 指标和 Web 查询界面。
 

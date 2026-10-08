@@ -1,0 +1,81 @@
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: egress-watch
+  namespace: kube-system
+data:
+  config.yaml: |
+    ports: [80, 443]
+    # REQUIRED: replace these example ranges with the real cluster ranges.
+    source_cidrs: ["10.244.0.0/16"]
+    destination_cidrs: []
+    exclude_cidrs: ["10.244.0.0/16", "10.96.0.0/12", "127.0.0.0/8", "::1/128"]
+    object_path: /app/egress.bpf.o
+    host_netns_path: /host/proc/1/ns/net
+    listen_addr: ":9359"
+    log_attempts: false
+    log:
+      path: ""
+      max_size_mb: 100
+      max_backups: 10
+      max_age_days: 7
+---
+apiVersion: apps/v1
+kind: DaemonSet
+metadata:
+  name: egress-watch
+  namespace: kube-system
+spec:
+  selector:
+    matchLabels: {app: egress-watch}
+  template:
+    metadata:
+      labels: {app: egress-watch}
+      annotations:
+        prometheus.io/scrape: "true"
+        prometheus.io/port: "9359"
+        prometheus.io/path: /metrics
+    spec:
+      hostNetwork: true
+      dnsPolicy: ClusterFirstWithHostNet
+      automountServiceAccountToken: false
+      terminationGracePeriodSeconds: 15
+      nodeSelector:
+        kubernetes.io/os: linux
+      containers:
+        - name: collector
+          image: conntrack-watch-egress:dev # replace with your registry/tag
+          imagePullPolicy: IfNotPresent
+          securityContext:
+            privileged: true
+            runAsUser: 0
+            readOnlyRootFilesystem: true
+          env:
+            - name: NODE_NAME
+              valueFrom:
+                fieldRef: {fieldPath: spec.nodeName}
+          ports:
+            - {name: metrics, containerPort: 9359}
+          readinessProbe:
+            httpGet: {path: /readyz, port: metrics}
+            initialDelaySeconds: 2
+          livenessProbe:
+            httpGet: {path: /healthz, port: metrics}
+            initialDelaySeconds: 15
+          resources:
+            requests: {cpu: 100m, memory: 64Mi}
+            limits: {cpu: "1", memory: 256Mi}
+          volumeMounts:
+            - {name: config, mountPath: /etc/egress-watch, readOnly: true}
+            - {name: btf, mountPath: /sys/kernel/btf, readOnly: true}
+            - {name: tracing, mountPath: /sys/kernel/tracing, readOnly: true}
+            - {name: host-proc, mountPath: /host/proc, readOnly: true}
+      volumes:
+        - name: config
+          configMap: {name: egress-watch}
+        - name: btf
+          hostPath: {path: /sys/kernel/btf, type: Directory}
+        - name: tracing
+          hostPath: {path: /sys/kernel/tracing, type: Directory}
+        - name: host-proc
+          hostPath: {path: /proc, type: Directory}
