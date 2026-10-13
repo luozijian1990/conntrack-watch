@@ -3,6 +3,7 @@
 package egress
 
 import (
+	"bytes"
 	"context"
 	"errors"
 	"fmt"
@@ -37,7 +38,8 @@ func Run(ctx context.Context, c Config, m *Metrics, out *Output, log *slog.Logge
 	if err != nil {
 		return fmt.Errorf("read tracepoint format (mount tracefs): %w", err)
 	}
-	if err = ValidateFormat(format); err != nil {
+	layout, err := ParseFormat(format)
+	if err != nil {
 		return err
 	}
 	info, err := os.Stat(c.HostNetNSPath)
@@ -53,9 +55,12 @@ func Run(ctx context.Context, c Config, m *Metrics, out *Output, log *slog.Logge
 	if err = rlimit.RemoveMemlock(); err != nil {
 		log.Warn("could not lift memlock; trying kernel load", "error", err)
 	}
-	spec, err := ebpf.LoadCollectionSpec(c.ObjectPath)
+	spec, err := ebpf.LoadCollectionSpecFromReader(bytes.NewReader(bpfObject))
 	if err != nil {
 		return fmt.Errorf("load BPF object: %w", err)
+	}
+	if err = spec.RewriteConstants(map[string]interface{}{"trace_offsets": layout}); err != nil {
+		return fmt.Errorf("configure tracepoint offsets: %w", err)
 	}
 	collection, err := ebpf.NewCollection(spec)
 	if err != nil {
@@ -91,11 +96,11 @@ func Run(ctx context.Context, c Config, m *Metrics, out *Output, log *slog.Logge
 	m.Ready.Set(1)
 	defer m.Ready.Set(0)
 	log.Info("collector attached", "tracepoint", "sock:inet_sock_set_state", "host_netns", hostNS, "ports", c.Ports, "node", c.Node)
-	var previous [3]uint64
+	var previous [len(kernelErrorReasons)]uint64
 	nextHealth := time.Now()
 	for ctx.Err() == nil {
 		if !time.Now().Before(nextHealth) {
-			for key, reason := range []string{"ringbuf_full", "pending_map_full", "namespace_read"} {
+			for key, reason := range kernelErrorReasons {
 				var perCPU []uint64
 				if err := collection.Maps["health"].Lookup(uint32(key), &perCPU); err != nil {
 					return fmt.Errorf("read kernel health: %w", err)

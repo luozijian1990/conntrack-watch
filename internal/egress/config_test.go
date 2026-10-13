@@ -7,7 +7,7 @@ import (
 
 func TestStrictConfig(t *testing.T) {
 	for _, yaml := range []string{
-		"ports: [443]", "source_cidrs: [bad]", "source_cidrs: [10.0.0.0/8]\nports: [0]", "source_cidrs: [10.0.0.0/8]\nports: [443,443]",
+		"source_cidrs: [10.0.0.0/8]\nobject_path: old.bpf.o", "ports: [443]", "source_cidrs: [bad]", "source_cidrs: [10.0.0.0/8]\nports: [0]", "source_cidrs: [10.0.0.0/8]\nports: [443,443]",
 		"source_cidrs: [10.0.0.0/8]\nport: [80]", "source_cidrs: [10.0.0.0/8]\n---\nports: [80]", "source_cidrs: [10.0.0.0/8]\nlog:\n  max_backups: 0",
 	} {
 		if _, err := ParseConfig([]byte(yaml)); err == nil {
@@ -18,7 +18,7 @@ func TestStrictConfig(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if c.Ports[1] != 443 || c.ListenAddr != ":9359" {
+	if c.Ports[1] != 443 || c.ListenAddr != ":9359" || c.LogAttempts {
 		t.Fatal(c)
 	}
 }

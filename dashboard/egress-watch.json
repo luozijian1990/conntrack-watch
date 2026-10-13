@@ -373,7 +373,7 @@
     {
       "id": 8,
       "title": "Kernel collection errors / second",
-      "description": "ringbuf_full = lost events, pending_map_full = outcomes may be missing, namespace_read = source identification failed. Counts precede userspace CIDR filtering.",
+      "description": "ringbuf_full = lost events, pending_map_full = outcomes may be missing, namespace_read = source identification failed, tracepoint_read = tracepoint buffer read failed. Counts precede userspace CIDR filtering.",
       "type": "timeseries",
       "datasource": {
         "type": "prometheus",

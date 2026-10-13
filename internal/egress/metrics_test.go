@@ -23,6 +23,7 @@ func TestMetricsSemanticsAndBoundedLabels(t *testing.T) {
 		`egress_connections_total{event="closed_before_established",port="443"} 1`,
 		`egress_connect_duration_seconds_count{port="443"} 1`,
 		`egress_kernel_errors_total{reason="ringbuf_full"} 0`,
+		`egress_kernel_errors_total{reason="tracepoint_read"} 0`,
 		`egress_collector_ready 0`,
 	} {
 		if !strings.Contains(body, want) {

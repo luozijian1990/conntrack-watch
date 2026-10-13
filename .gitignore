@@ -34,3 +34,5 @@ go.work.sum
 # eBPF build artifacts and logs
 /build/
 *.log
+
+/internal/egress/egress.bpf.o

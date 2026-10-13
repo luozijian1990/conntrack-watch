@@ -7,6 +7,8 @@ import (
 	"github.com/prometheus/client_golang/prometheus/collectors"
 )
 
+var kernelErrorReasons = [...]string{"ringbuf_full", "pending_map_full", "namespace_read", "tracepoint_read"}
+
 type Metrics struct {
 	Registry     *prometheus.Registry
 	Connections  *prometheus.CounterVec
@@ -21,7 +23,7 @@ func NewMetrics(ports []uint16) *Metrics {
 	m := &Metrics{Registry: prometheus.NewRegistry(),
 		Connections:  prometheus.NewCounterVec(prometheus.CounterOpts{Name: "egress_connections_total", Help: "Observed active TCP opens and outcomes after configured IP/port filters; not HTTP requests. Outcomes may cross scrape windows."}, []string{"port", "event"}),
 		Duration:     prometheus.NewHistogramVec(prometheus.HistogramOpts{Name: "egress_connect_duration_seconds", Help: "Time from observed SYN_SENT to successful establishment.", Buckets: []float64{.001, .005, .01, .025, .05, .1, .25, .5, 1, 2.5, 5, 10, 30}}, []string{"port"}),
-		KernelErrors: prometheus.NewCounterVec(prometheus.CounterOpts{Name: "egress_kernel_errors_total", Help: "Kernel collector errors before userspace CIDR filtering: ringbuf_full, pending_map_full, namespace_read."}, []string{"reason"}),
+		KernelErrors: prometheus.NewCounterVec(prometheus.CounterOpts{Name: "egress_kernel_errors_total", Help: "Kernel collector errors before userspace CIDR filtering: ringbuf_full, pending_map_full, namespace_read, tracepoint_read."}, []string{"reason"}),
 		DecodeErrors: prometheus.NewCounter(prometheus.CounterOpts{Name: "egress_decode_errors_total", Help: "Rejected malformed or incompatible events."}),
 		LogErrors:    prometheus.NewCounter(prometheus.CounterOpts{Name: "egress_log_errors_total", Help: "Connection JSON write failures."}),
 		Ready:        prometheus.NewGauge(prometheus.GaugeOpts{Name: "egress_collector_ready", Help: "One while tracepoint is attached and the collector is running."}),
@@ -34,7 +36,7 @@ func NewMetrics(ports []uint16) *Metrics {
 		}
 		m.Duration.WithLabelValues(label)
 	}
-	for _, r := range []string{"ringbuf_full", "pending_map_full", "namespace_read"} {
+	for _, r := range kernelErrorReasons {
 		m.KernelErrors.WithLabelValues(r)
 	}
 	return m

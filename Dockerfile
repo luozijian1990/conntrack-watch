@@ -13,7 +13,6 @@ RUN make build GOARCH=${TARGETARCH}
 FROM gcr.io/distroless/static-debian12:nonroot
 WORKDIR /app
 COPY --from=builder /src/build/egress-watch /app/egress-watch
-COPY --from=builder /src/build/egress.bpf.o /app/egress.bpf.o
 USER 0:0
 ENTRYPOINT ["/app/egress-watch"]
 CMD ["-config", "/etc/egress-watch/config.yaml"]

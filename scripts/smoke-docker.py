@@ -2,7 +2,7 @@
 """Real Linux BPF/container smoke test. Uses only owned containers/networks.
 
 Prerequisites: build/egress-watch matching Docker's Linux architecture,
-build/egress.bpf.o, conntrack-watch-egress-toolchain:dev and python:3.12-alpine.
+conntrack-watch-egress-toolchain:dev and python:3.12-alpine.
 Requires Docker and privileged containers. No host ports are published.
 """
 import json
@@ -25,7 +25,7 @@ def docker(*args, check=True):
     result = subprocess.run(["docker", *map(str, args)], capture_output=True, text=True, timeout=60)
     if check and result.returncode:
         raise RuntimeError(f"docker {args}: {result.stderr}\n{result.stdout}")
-    return result.stdout.strip()
+    return (result.stdout + (result.stderr if args[0] == "logs" else "")).strip()
 
 
 def start(suffix, *args):
@@ -56,7 +56,6 @@ try:
         "ports": [18443, 18444],
         "source_cidrs": [addr + "/32" for addr in client_ips + [gateway]],
         "exclude_cidrs": [gateway + "/32"],
-        "object_path": "/src/build/egress.bpf.o",
         "host_netns_path": "/host/proc/1/ns/net",
         "listen_addr": ":9359", "log_attempts": True, "node": "smoke-node",
     }
@@ -128,6 +127,7 @@ s.close()
         'egress_kernel_errors_total{reason="ringbuf_full"} 0',
         'egress_kernel_errors_total{reason="pending_map_full"} 0',
         'egress_kernel_errors_total{reason="namespace_read"} 0',
+        'egress_kernel_errors_total{reason="tracepoint_read"} 0',
     ]:
         assert line in metrics, line
     docker("stop", "--time", "5", collector)

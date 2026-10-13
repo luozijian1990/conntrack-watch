@@ -41,7 +41,7 @@ CLOSE → SYN_SENT：保存来源 IP、netns、发起进程身份
 
 | 项目 | 要求 |
 | --- | --- |
-| 运行节点 | Linux，amd64 或 arm64，小端；目标内核 5.15+ |
+| 运行节点 | Linux，amd64 或 arm64，小端；目标内核 5.10+（包括 5.10） |
 | 内核能力 | BTF、BPF、tracepoint、ring buffer；可读取 `/sys/kernel/btf/vmlinux` |
 | 编译工具 | Go 1.21+、带 BPF 后端的 Clang、make |
 | 运行权限 | BPF / tracepoint 权限；以下示例使用 root |
@@ -52,10 +52,14 @@ CLOSE → SYN_SENT：保存来源 IP、netns、发起进程身份
 make build GOARCH=amd64  # ARM64 节点使用 GOARCH=arm64
 ```
 
-产物为 `build/egress-watch` 和 `build/egress.bpf.o`，运行时需要同时保留。`make build` 生成 Linux 可执行文件；macOS 可运行 Go 单元测试和配置校验，采集需在 Linux 上执行。没有本地 Linux 编译环境时，可使用下文的 Docker 构建方式。
+产物为 `build/egress-watch`，BPF 对象已嵌入该二进制；运行时只需二进制和 YAML 配置，无需额外 `.o` 文件。`make build` 生成 Linux 可执行文件；macOS 可运行 Go 单元测试和配置校验，采集需在 Linux 上执行。没有本地 Linux 编译环境时，可使用下文的 Docker 构建方式。
+
+程序启动时从 tracefs 的 `sock/inet_sock_set_state/format` 读取实际字段偏移，支持公共头或事件字段偏移的发行版差异，不按内核版本硬编码布局。必需字段仍需存在且大小兼容，内核需启用 BTF、BPF、tracepoint 和 ring buffer；仅版本号达到 5.10 不代表这些功能已启用。旧配置中的 `object_path` 请删除。
+
+在服务器编译时安装 Go、支持 BPF target 的 Clang 和 make，执行上述 `make build` 即可。直接 `go build` 前需先执行 `make bpf`，生成供嵌入使用的构建产物。Linux 上 `make test` 会自动先编译 BPF 对象。
 
 > [!NOTE]
-> 已有真实加载与容器流量验证来自 Docker Linux 6.12 / arm64。最低目标内核、amd64 实际加载和目标 Kubernetes/CNI 仍需验收，详见 [VALIDATION.md](VALIDATION.md)。
+> 已通过 `dev105` 的 Linux `5.14.0-362.8.1.el9_3` / amd64 实际加载和 Docker 容器访问百度 HTTPS 验证，也通过 Docker Linux 6.12 / arm64 验证。真实 5.10 内核、目标 Kubernetes/CNI、IPv6 流量和负载仍需验收，详见 [VALIDATION.md](VALIDATION.md)。
 
 ### 2. 配置观测范围
 
@@ -90,7 +94,7 @@ curl -fsS http://127.0.0.1:9359/readyz
 curl -fsS http://127.0.0.1:9359/metrics
 ```
 
-默认连接日志写入 stdout，运行诊断以 JSON 写入 stderr。默认只输出建连结果；设置 `log_attempts: true` 可额外输出尝试日志。
+默认连接日志写入 stdout，运行诊断以 JSON 写入 stderr。`log_attempts` 默认为 `false`，省略该配置时也只输出建连结果。设置 `log_attempts: true` 会额外输出 `attempt`，因此同一次成功建连通常产生 `attempt` 和 `established` 两条日志；尝试时源端口可能为 0，结果事件会补全端口。该开关不影响 Prometheus 的尝试计数。
 
 ## 配置
 
@@ -102,7 +106,6 @@ curl -fsS http://127.0.0.1:9359/metrics
 | `source_cidrs` | 必填；来源 Pod / 容器网段，支持 IPv4 和 IPv6 |
 | `destination_cidrs` | `[]`；允许的目标范围，空表示不限 |
 | `exclude_cidrs` | `[]`；排除目标，优先于允许范围；示例文件已填写示例网段 |
-| `object_path` | `build/egress.bpf.o`；相对路径以工作目录为基准 |
 | `host_netns_path` | `/proc/1/ns/net`；须指向真实宿主机网络命名空间 |
 | `listen_addr` | `:9359`；HTTP 监听地址 |
 | `node` | 依次使用配置值、`NODE_NAME`、hostname |
@@ -166,7 +169,7 @@ Filebeat 可按 `type=egress_connection` 筛选连接日志，在 Elasticsearch 
 | --- | --- | --- |
 | `egress_connections_total` | `port,event` | 通过过滤的尝试、成功、未建立即关闭事件数 |
 | `egress_connect_duration_seconds` | `port` | 成功建连耗时 histogram，单位秒 |
-| `egress_kernel_errors_total` | `reason` | `ringbuf_full`、`pending_map_full`、`namespace_read` |
+| `egress_kernel_errors_total` | `reason` | `ringbuf_full`、`pending_map_full`、`namespace_read`、`tracepoint_read` |
 | `egress_decode_errors_total` | — | 事件解码或校验失败 |
 | `egress_log_errors_total` | — | JSON 写入失败；发生后采集器退出 |
 | `egress_collector_ready` | — | 挂载并运行时为 1 |

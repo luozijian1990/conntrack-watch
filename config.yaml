@@ -5,7 +5,6 @@ source_cidrs: ["10.244.0.0/16"]
 destination_cidrs: []
 # Exclude Pod and Service ranges. External services may use private addresses.
 exclude_cidrs: ["10.244.0.0/16", "10.96.0.0/12", "127.0.0.0/8", "::1/128"]
-object_path: build/egress.bpf.o
 host_netns_path: /proc/1/ns/net
 listen_addr: ":9359"
 node: "" # NODE_NAME environment variable, then hostname

@@ -10,7 +10,6 @@ data:
     source_cidrs: ["10.244.0.0/16"]
     destination_cidrs: []
     exclude_cidrs: ["10.244.0.0/16", "10.96.0.0/12", "127.0.0.0/8", "::1/128"]
-    object_path: /app/egress.bpf.o
     host_netns_path: /host/proc/1/ns/net
     listen_addr: ":9359"
     log_attempts: false

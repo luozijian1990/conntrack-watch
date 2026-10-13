@@ -16,7 +16,6 @@ type Config struct {
 	SourceCIDRs      []string `yaml:"source_cidrs"`
 	DestinationCIDRs []string `yaml:"destination_cidrs"`
 	ExcludeCIDRs     []string `yaml:"exclude_cidrs"`
-	ObjectPath       string   `yaml:"object_path"`
 	HostNetNSPath    string   `yaml:"host_netns_path"`
 	ListenAddr       string   `yaml:"listen_addr"`
 	Node             string   `yaml:"node"`
@@ -38,7 +37,7 @@ func LoadConfig(path string) (Config, error) {
 }
 
 func ParseConfig(data []byte) (Config, error) {
-	c := Config{Ports: []uint16{80, 443}, ObjectPath: "build/egress.bpf.o", HostNetNSPath: "/proc/1/ns/net", ListenAddr: ":9359"}
+	c := Config{Ports: []uint16{80, 443}, HostNetNSPath: "/proc/1/ns/net", ListenAddr: ":9359"}
 	c.Log.MaxSizeMB, c.Log.MaxBackups, c.Log.MaxAgeDays = 100, 10, 7
 	d := yaml.NewDecoder(bytes.NewReader(data))
 	d.KnownFields(true)
@@ -65,8 +64,8 @@ func ParseConfig(data []byte) (Config, error) {
 	if _, err := NewFilter(c); err != nil {
 		return c, err
 	}
-	if c.ObjectPath == "" || c.HostNetNSPath == "" {
-		return c, fmt.Errorf("object_path and host_netns_path are required")
+	if c.HostNetNSPath == "" {
+		return c, fmt.Errorf("host_netns_path is required")
 	}
 	if _, _, err := net.SplitHostPort(c.ListenAddr); err != nil {
 		return c, fmt.Errorf("listen_addr: %w", err)

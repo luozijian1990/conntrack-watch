@@ -27,7 +27,14 @@ struct sock_common { possible_net_t skc_net; } __attribute__((preserve_access_in
 struct sock { struct sock_common __sk_common; } __attribute__((preserve_access_index));
 #define READ(dst, src) read_kernel(&(dst), sizeof(dst), __builtin_preserve_access_index(&(src)))
 
-// Standard tracepoint ABI, validated against tracefs /format by the loader.
+// Offsets populated by the loader from the running kernel's tracefs format.
+struct trace_layout {
+    u32 skaddr, oldstate, newstate, sport, dport, family, protocol;
+    u32 saddr, daddr, saddr_v6, daddr_v6;
+};
+const volatile struct trace_layout trace_offsets = {};
+
+// Local decoded values, never cast onto the kernel tracepoint buffer.
 struct state_ctx {
     u64 common;
     u64 skaddr;
@@ -51,8 +58,8 @@ struct { UINT(type, 1); UINT(max_entries, 65536); TYPE(key, u64); TYPE(value, st
 struct { UINT(type, 1); UINT(max_entries, 65535); TYPE(key, u16); TYPE(value, u8); } ports SEC(".maps");
 struct { UINT(type, 2); UINT(max_entries, 1); TYPE(key, u32); TYPE(value, u32); } host_netns SEC(".maps");
 struct { UINT(type, 27); UINT(max_entries, 4194304); } events SEC(".maps");
-// Per-CPU health counters: ring loss, map full, CO-RE read failure.
-struct { UINT(type, 6); UINT(max_entries, 3); TYPE(key, u32); TYPE(value, u64); } health SEC(".maps");
+// Per-CPU health counters: ring loss, map full, CO-RE and tracepoint read failures.
+struct { UINT(type, 6); UINT(max_entries, 4); TYPE(key, u32); TYPE(value, u64); } health SEC(".maps");
 
 INLINE void count(u32 key) {
     u64 *v = map_lookup(&health, &key);
@@ -63,7 +70,15 @@ INLINE void emit(struct event *e) {
 }
 
 SEC("tracepoint/sock/inet_sock_set_state")
-int trace_state(struct state_ctx *ctx) {
+int trace_state(void *raw) {
+    struct state_ctx decoded = {};
+    struct state_ctx *ctx = &decoded;
+#define FIELD(name) read_kernel(&ctx->name, sizeof(ctx->name), (const char *)raw + trace_offsets.name)
+    if (FIELD(protocol) || FIELD(family) || FIELD(skaddr) || FIELD(oldstate) ||
+        FIELD(newstate) || FIELD(sport) || FIELD(dport)) {
+        count(3);
+        return 0;
+    }
     if (ctx->protocol != 6 || (ctx->family != 2 && ctx->family != 10)) return 0;
     u64 key = ctx->skaddr;
     if (ctx->newstate == 2 && ctx->oldstate == 7) { // CLOSE -> SYN_SENT: active open only
@@ -88,6 +103,11 @@ int trace_state(struct state_ctx *ctx) {
         e.family = ctx->family;
         e.kind = 1;
         e.version = 1;
+        if ((e.family == 2 && (FIELD(saddr) || FIELD(daddr))) ||
+            (e.family == 10 && (FIELD(saddr_v6) || FIELD(daddr_v6)))) {
+            count(3);
+            return 0;
+        }
         if (e.family == 2) {
             __builtin_memcpy(e.src, ctx->saddr, 4);
             __builtin_memcpy(e.dst, ctx->daddr, 4);
