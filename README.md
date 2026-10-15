@@ -182,3 +182,21 @@ sum by (instance, port) (rate(conntrack_new_connections_total[5m]))
 ## License
 
 MIT
+
+## 双分支版本发布
+
+GitHub Actions 的 **Release dual watchers** 从 `main` 手动触发，填写新版本号
+（例如 `v0.1.0`）和 `ebpf_ref`（默认 `ebpf`，也支持 tag 或完整提交 SHA）。
+流程固定两个来源的提交，运行测试与检查，构建两个版本的 Linux amd64、arm64
+二进制；全部成功后创建一个 GitHub Release。已有 tag 不会被覆盖。
+
+每个压缩包包含二进制、该版本对应的 `config.yaml`、README 和 LICENSE：
+
+- `conntrack-watch_<version>_linux_<arch>.tar.gz`：来自 `main` 的 conntrack 版本。
+- `egress-watch_<version>_linux_<arch>.tar.gz`：来自 `ebpf_ref` 的 eBPF 版本，BPF 对象已嵌入二进制。
+- `release-manifest.json`：两个版本的完整源码提交 SHA 和目标平台。
+- `SHA256SUMS`：压缩包和 manifest 的 SHA-256 校验和。
+
+两个版本的配置格式不同，部署时使用各自压缩包的配置并按节点环境调整。
+下载后可在同一目录运行 `sha256sum -c SHA256SUMS` 校验。
+构建和单元测试不代表目标内核、Kubernetes/CNI 或实际流量验证。

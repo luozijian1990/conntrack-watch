@@ -1,0 +1,192 @@
+name: Release dual watchers
+
+on:
+  workflow_dispatch:
+    inputs:
+      version:
+        description: Release version, for example v0.1.0
+        required: true
+        type: string
+      ebpf_ref:
+        description: eBPF branch, tag, or full commit SHA
+        required: true
+        default: ebpf
+        type: string
+
+permissions:
+  contents: read
+
+concurrency:
+  group: release-${{ inputs.version }}
+  cancel-in-progress: false
+
+jobs:
+  resolve-sources:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 10
+    outputs:
+      main_sha: ${{ steps.main.outputs.sha }}
+      ebpf_sha: ${{ steps.ebpf.outputs.sha }}
+    steps:
+      - name: Validate release request
+        shell: bash
+        env:
+          RELEASE_VERSION: ${{ inputs.version }}
+        run: |
+          if [[ "${GITHUB_REF}" != "refs/heads/main" ]]; then
+            echo 'Run this workflow from main.' >&2
+            exit 1
+          fi
+          if [[ ! "${RELEASE_VERSION}" =~ ^v[0-9]+\.[0-9]+\.[0-9]+([.-][0-9A-Za-z.-]+)?$ ]]; then
+            echo 'version must look like v1.2.3 or v1.2.3-rc.1' >&2
+            exit 1
+          fi
+      - uses: actions/checkout@v7
+        with:
+          ref: ${{ github.sha }}
+      - name: Record main revision and reject existing tag
+        id: main
+        shell: bash
+        env:
+          RELEASE_VERSION: ${{ inputs.version }}
+        run: |
+          echo "sha=$(git rev-parse HEAD)" >> "${GITHUB_OUTPUT}"
+          if [[ -n "$(git ls-remote --tags origin "refs/tags/${RELEASE_VERSION}")" ]]; then
+            echo "Tag ${RELEASE_VERSION} already exists; use a new version." >&2
+            exit 1
+          fi
+      - uses: actions/checkout@v7
+        with:
+          ref: ${{ inputs.ebpf_ref }}
+          path: ebpf-source
+      - name: Record eBPF revision
+        id: ebpf
+        run: echo "sha=$(git -C ebpf-source rev-parse HEAD)" >> "${GITHUB_OUTPUT}"
+
+  build:
+    name: Build ${{ matrix.variant }} linux/${{ matrix.arch }}
+    needs: resolve-sources
+    runs-on: ubuntu-24.04
+    timeout-minutes: 20
+    strategy:
+      fail-fast: false
+      matrix:
+        variant: [conntrack, ebpf]
+        arch: [amd64, arm64]
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          ref: ${{ matrix.variant == 'ebpf' && needs.resolve-sources.outputs.ebpf_sha || needs.resolve-sources.outputs.main_sha }}
+      - uses: actions/setup-go@v7
+        with:
+          go-version: '1.25.x'
+          cache-dependency-path: go.sum
+      - name: Install eBPF compiler
+        if: matrix.variant == 'ebpf'
+        run: |
+          sudo apt-get update
+          sudo apt-get install --yes --no-install-recommends clang
+      - name: Test and vet on native architecture
+        if: matrix.arch == 'amd64'
+        shell: bash
+        env:
+          VARIANT: ${{ matrix.variant }}
+        run: |
+          if [[ "${VARIANT}" == ebpf ]]; then
+            make test
+            python3 scripts/check-dashboard.py
+          else
+            go test -race ./...
+          fi
+          go vet ./...
+      - name: Build release binary
+        shell: bash
+        env:
+          VARIANT: ${{ matrix.variant }}
+          TARGET_ARCH: ${{ matrix.arch }}
+        run: |
+          if [[ "${VARIANT}" == ebpf ]]; then
+            make build GOARCH="${TARGET_ARCH}"
+          else
+            CGO_ENABLED=0 GOOS=linux GOARCH="${TARGET_ARCH}" go build \
+              -trimpath -ldflags='-s -w' -o build/conntrack-watch ./cmd/conntrack-watch
+          fi
+          file build/*watch
+      - name: Check eBPF example configuration
+        if: matrix.variant == 'ebpf' && matrix.arch == 'amd64'
+        run: ./build/egress-watch -config config.yaml -check-config
+      - name: Package binary and matching configuration
+        shell: bash
+        env:
+          VARIANT: ${{ matrix.variant }}
+          TARGET_ARCH: ${{ matrix.arch }}
+          RELEASE_VERSION: ${{ inputs.version }}
+        run: |
+          binary=conntrack-watch
+          if [[ "${VARIANT}" == ebpf ]]; then binary=egress-watch; fi
+          mkdir -p dist/package
+          install -m 0755 "build/${binary}" "dist/package/${binary}"
+          install -m 0644 config.yaml README.md LICENSE dist/package/
+          tar -C dist/package -czf "dist/${binary}_${RELEASE_VERSION}_linux_${TARGET_ARCH}.tar.gz" \
+            "${binary}" config.yaml README.md LICENSE
+      - uses: actions/upload-artifact@v7
+        with:
+          name: release-${{ matrix.variant }}-${{ matrix.arch }}
+          path: dist/*.tar.gz
+          if-no-files-found: error
+          retention-days: 1
+
+  publish-release:
+    needs: [resolve-sources, build]
+    runs-on: ubuntu-24.04
+    timeout-minutes: 10
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/download-artifact@v7
+        with:
+          pattern: release-*
+          path: dist
+          merge-multiple: true
+      - name: Generate source manifest and checksums
+        shell: bash
+        env:
+          RELEASE_VERSION: ${{ inputs.version }}
+          MAIN_SHA: ${{ needs.resolve-sources.outputs.main_sha }}
+          EBPF_REF: ${{ inputs.ebpf_ref }}
+          EBPF_SHA: ${{ needs.resolve-sources.outputs.ebpf_sha }}
+        run: |
+          test "$(find dist -maxdepth 1 -name '*.tar.gz' | wc -l)" -eq 4
+          jq -n --arg version "${RELEASE_VERSION}" --arg main_sha "${MAIN_SHA}" \
+            --arg ebpf_ref "${EBPF_REF}" --arg ebpf_sha "${EBPF_SHA}" \
+            '{schema_version: 1, version: $version, release_tag_target: $main_sha,
+              platforms: ["linux/amd64", "linux/arm64"],
+              variants: {
+                conntrack: {source_ref: "main", source_sha: $main_sha, binary: "conntrack-watch"},
+                ebpf: {source_ref: $ebpf_ref, source_sha: $ebpf_sha, binary: "egress-watch"}
+              }}' > dist/release-manifest.json
+          (cd dist && sha256sum ./*.tar.gz ./release-manifest.json > SHA256SUMS)
+      - name: Publish GitHub Release
+        shell: bash
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          GH_REPO: ${{ github.repository }}
+          RELEASE_VERSION: ${{ inputs.version }}
+          MAIN_SHA: ${{ needs.resolve-sources.outputs.main_sha }}
+        run: |
+          cat > release-notes.md <<'NOTES'
+          Includes conntrack-watch (main) and egress-watch (eBPF) for Linux amd64 and arm64.
+
+          Each archive contains the binary, its matching config.yaml, README.md, and LICENSE.
+          The two variants use different configuration formats. Adjust the included configuration before running as root.
+          egress-watch embeds its BPF object; no external .o file is required.
+          eBPF operation requires a compatible Linux kernel with BTF, tracepoint, and ring buffer support.
+
+          Exact source revisions are recorded in release-manifest.json. Verify downloads using SHA256SUMS.
+          Cross-compilation and unit tests do not constitute live kernel or Kubernetes/CNI validation.
+          NOTES
+          extra_args=()
+          if [[ "${RELEASE_VERSION}" == *-* ]]; then extra_args+=(--prerelease); fi
+          gh release create "${RELEASE_VERSION}" dist/* \
+            --target "${MAIN_SHA}" --title "${RELEASE_VERSION}" \
+            --notes-file release-notes.md --generate-notes "${extra_args[@]}"
